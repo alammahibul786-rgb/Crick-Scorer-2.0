@@ -15,3 +15,8 @@ android {
         versionName = "2.0"
     }
 }
+
+
+kotlinOptions {
+    jvmTarget = "17"
+}
