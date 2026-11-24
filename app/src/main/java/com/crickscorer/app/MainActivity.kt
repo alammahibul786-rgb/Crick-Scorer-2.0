@@ -1,359 +1,409 @@
 package com.crickscorer.app
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.os.Bundle
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import java.util.ArrayDeque
-import kotlin.math.roundToInt
+import java.util.Locale
 
 class MainActivity : Activity() {
 
-    private data class BallRecord(
-        val runs: Int,
-        val legalBall: Boolean,
-        val wicket: Boolean,
-        val label: String
+    private data class Innings(
+        var batting: String,
+        var bowling: String,
+        var runs: Int = 0,
+        var wickets: Int = 0,
+        var legalBalls: Int = 0,
+        var wides: Int = 0,
+        var noBalls: Int = 0,
+        var byes: Int = 0,
+        var legByes: Int = 0,
+        var penalty: Int = 0,
+        var declared: Boolean = false,
+        var completed: Boolean = false
+    ) {
+        val ballsInOver: Int get() = legalBalls % 6
+        val overs: String get() = "${legalBalls / 6}.${ballsInOver}"
+        val extras: Int get() = wides + noBalls + byes + legByes + penalty
+        val runRate: Double get() =
+            if (legalBalls == 0) 0.0 else runs * 6.0 / legalBalls
+    }
+
+    private data class Snapshot(
+        val innings: List<Innings>,
+        val currentIndex: Int,
+        val matchType: String,
+        val oversLimit: Int,
+        val teamA: String,
+        val teamB: String
     )
 
-    private var totalRuns = 0
-    private var wickets = 0
-    private var legalBalls = 0
-    private var innings = 1
-    private var target = 0
-    private var battingTeam = "TEAM A"
-    private var bowlingTeam = "TEAM B"
-    private val history = ArrayDeque<BallRecord>()
+    private val inningsList = mutableListOf<Innings>()
+    private val undoStack = ArrayDeque<Snapshot>()
+    private var currentIndex = 0
+    private var matchType = "T20"
+    private var oversLimit = 20
+    private var teamA = "TEAM A"
+    private var teamB = "TEAM B"
 
-    private lateinit var scoreText: TextView
-    private lateinit var oversText: TextView
-    private lateinit var runRateText: TextView
-    private lateinit var statusText: TextView
-    private lateinit var targetText: TextView
-    private lateinit var historyText: TextView
     private lateinit var root: LinearLayout
+    private lateinit var scoreText: TextView
+    private lateinit var detailsText: TextView
+    private lateinit var statusText: TextView
+    private lateinit var inningsText: TextView
+    private lateinit var historyText: TextView
+
+    private val current: Innings
+        get() = inningsList[currentIndex]
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        if (savedInstanceState != null) {
-            totalRuns = savedInstanceState.getInt("runs")
-            wickets = savedInstanceState.getInt("wickets")
-            legalBalls = savedInstanceState.getInt("balls")
-            innings = savedInstanceState.getInt("innings")
-            target = savedInstanceState.getInt("target")
-            battingTeam = savedInstanceState.getString("batting", "TEAM A") ?: "TEAM A"
-            bowlingTeam = savedInstanceState.getString("bowling", "TEAM B") ?: "TEAM B"
-        }
-
+        startNewMatch()
         buildScreen()
-        refresh()
+        showSetupDialog()
     }
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        outState.putInt("runs", totalRuns)
-        outState.putInt("wickets", wickets)
-        outState.putInt("balls", legalBalls)
-        outState.putInt("innings", innings)
-        outState.putInt("target", target)
-        outState.putString("batting", battingTeam)
-        outState.putString("bowling", bowlingTeam)
-        super.onSaveInstanceState(outState)
-    }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
-
-    private fun panel(color: Int, radius: Int = 18): GradientDrawable {
-        return GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = dp(radius).toFloat()
-        }
+    private fun startNewMatch() {
+        inningsList.clear()
+        undoStack.clear()
+        currentIndex = 0
+        inningsList.add(Innings(teamA, teamB))
     }
 
     private fun buildScreen() {
         val scroll = ScrollView(this)
-        scroll.setBackgroundColor(Color.rgb(9, 17, 31))
-
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(18), dp(18), dp(24))
+            setPadding(dp(16), dp(16), dp(16), dp(24))
+            setBackgroundColor(Color.rgb(10, 20, 35))
         }
         scroll.addView(root)
-
-        val header = TextView(this).apply {
-            text = "CRICKET SCORER"
-            textSize = 24f
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setPadding(0, dp(8), 0, dp(4))
-        }
-        root.addView(header)
-
-        val subtitle = TextView(this).apply {
-            text = "LIVE MATCH • SIMPLE SCOREBOARD"
-            textSize = 11f
-            letterSpacing = 0.12f
-            setTextColor(Color.rgb(143, 163, 190))
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, dp(18))
-        }
-        root.addView(subtitle)
-
-        val scoreCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            background = panel(Color.rgb(20, 39, 65), 22)
-            setPadding(dp(16), dp(20), dp(16), dp(20))
-        }
-        root.addView(scoreCard, matchWidth())
-
-        val teamText = TextView(this).apply {
-            text = battingTeam
-            textSize = 18f
-            setTextColor(Color.rgb(170, 205, 255))
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-        }
-        scoreCard.addView(teamText)
-        scoreText = TextView(this).apply {
-            text = "0/0"
-            textSize = 48f
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setPadding(0, dp(5), 0, dp(2))
-        }
-        scoreCard.addView(scoreText)
-
-        val stats = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
-        scoreCard.addView(stats, matchWidth())
-        oversText = statView("OVERS  0.0")
-        runRateText = statView("RUN RATE  0.00")
-        stats.addView(oversText, LinearLayout.LayoutParams(0, dp(42), 1f))
-        stats.addView(runRateText, LinearLayout.LayoutParams(0, dp(42), 1f))
-
-        targetText = TextView(this).apply {
-            text = "1ST INNINGS"
-            textSize = 13f
-            setTextColor(Color.rgb(255, 205, 110))
-            gravity = Gravity.CENTER
-            setPadding(0, dp(12), 0, 0)
-        }
-        scoreCard.addView(targetText)
-
-        statusText = TextView(this).apply {
-            text = "Match in progress"
-            textSize = 13f
-            setTextColor(Color.rgb(175, 190, 210))
-            gravity = Gravity.CENTER
-            setPadding(0, dp(12), 0, dp(12))
-        }
-        root.addView(statusText)
-
-        sectionTitle("ADD RUNS")
-        val runsRow = row()
-        listOf(0, 1, 2, 3, 4, 6).forEach { value ->
-            runsRow.addView(actionButton(value.toString(), Color.rgb(27, 112, 83)) {
-                addBall(value, true, false, "$value run${if (value == 1) "" else "s"}")
-            }, equalWeight())
-        }
-        root.addView(runsRow)
-
-        sectionTitle("EXTRAS")
-        val extrasRow = row()
-        extrasRow.addView(actionButton("WIDE +1", Color.rgb(44, 91, 150)) {
-            addBall(1, false, false, "Wide +1")
-        }, equalWeight())
-        extrasRow.addView(actionButton("NO BALL +1", Color.rgb(44, 91, 150)) {
-            addBall(1, false, false, "No ball +1")
-        }, equalWeight())
-        root.addView(extrasRow)
-
-        val extrasRow2 = row()
-        extrasRow2.addView(actionButton("BYE", Color.rgb(44, 91, 150)) {
-            addBall(1, true, false, "Bye 1")
-        }, equalWeight())
-        extrasRow2.addView(actionButton("LEG BYE", Color.rgb(44, 91, 150)) {
-            addBall(1, true, false, "Leg bye 1")
-        }, equalWeight())
-        root.addView(extrasRow2)
-
-        sectionTitle("WICKET & CONTROLS")
-        val controlRow = row()
-        controlRow.addView(actionButton("WICKET", Color.rgb(176, 55, 61)) {
-            if (wickets < 10) addBall(0, true, true, "Wicket")
-        }, equalWeight())
-        controlRow.addView(actionButton("UNDO", Color.rgb(90, 101, 120)) {
-            undo()
-        }, equalWeight())
-        root.addView(controlRow)
-
-        val controlRow2 = row()
-        controlRow2.addView(actionButton("END INNINGS", Color.rgb(175, 111, 34)) {
-            endInnings()
-        }, equalWeight())
-        controlRow2.addView(actionButton("RESET MATCH", Color.rgb(111, 57, 122)) {
-            resetMatch()
-        }, equalWeight())
-        root.addView(controlRow2)
-
-        sectionTitle("RECENT BALLS")
-        historyText = TextView(this).apply {
-            text = "No balls recorded yet"
-            textSize = 14f
-            setTextColor(Color.WHITE)
-            background = panel(Color.rgb(20, 31, 49), 14)
-            setPadding(dp(14), dp(14), dp(14), dp(14))
-        }
-        root.addView(historyText, matchWidth())
-
-        val note = TextView(this).apply {
-            text = "Note: Wide and no-ball add one run and do not count as a legal delivery. Use Undo to reverse the latest scoring action."
-            textSize = 11f
-            setTextColor(Color.rgb(135, 153, 178))
-            setPadding(dp(4), dp(16), dp(4), 0)
-        }
-        root.addView(note)
         setContentView(scroll)
+
+        val header = text("🏏 CRICKET SCORER", 25, Color.WHITE, true)
+        header.gravity = Gravity.CENTER
+        root.addView(header)
+        val sub = text("INTERNATIONAL EDITION", 12, Color.rgb(100, 220, 190), true)
+        sub.gravity = Gravity.CENTER
+        root.addView(sub)
+        addGap(14)
+
+        val setupButton = button("MATCH SETUP  •  $matchType", Color.rgb(32, 55, 78))
+        setupButton.setOnClickListener { showSetupDialog() }
+        root.addView(setupButton)
+
+        inningsText = text("", 14, Color.rgb(170, 195, 220), true)
+        root.addView(inningsText)
+        scoreText = text("0/0", 48, Color.WHITE, true)
+        scoreText.gravity = Gravity.CENTER
+        root.addView(scoreText)
+        detailsText = text("", 16, Color.rgb(190, 210, 230), false)
+        detailsText.gravity = Gravity.CENTER
+        root.addView(detailsText)
+        statusText = text("", 14, Color.rgb(100, 220, 190), true)
+        statusText.gravity = Gravity.CENTER
+        root.addView(statusText)
+        addGap(12)
+
+        section("SCORE RUNS")
+        val runRow = row()
+        listOf(0, 1, 2, 3, 4, 6).forEach { value ->
+            val b = button(value.toString(), if (value == 4 || value == 6)
+                Color.rgb(0, 130, 105) else Color.rgb(35, 75, 110))
+            b.textSize = 20f
+            b.setOnClickListener { addRuns(value, true, "Runs $value") }
+            runRow.addView(b, weightParams())
+        }
+        root.addView(runRow)
+
+        section("EXTRAS")
+        val extraRow1 = row()
+        addAction(extraRow1, "Wide +1") { addRuns(1, false, "Wide", wide = 1) }
+        addAction(extraRow1, "No-ball +1") { addRuns(1, false, "No-ball", noBall = 1) }
+        root.addView(extraRow1)
+        val extraRow2 = row()
+        addAction(extraRow2, "Bye") { addRuns(1, true, "Bye", bye = 1) }
+        addAction(extraRow2, "Leg-bye") { addRuns(1, true, "Leg-bye", legBye = 1) }
+        root.addView(extraRow2)
+
+        section("WICKET & MATCH")
+        val matchRow1 = row()
+        addAction(matchRow1, "WICKET", Color.rgb(170, 55, 65)) { addWicket() }
+        addAction(matchRow1, "UNDO", Color.rgb(90, 90, 105)) { undo() }
+        root.addView(matchRow1)
+        val matchRow2 = row()
+        addAction(matchRow2, "Next innings") { nextInnings() }
+        addAction(matchRow2, "Declare (Test)") { declareInnings() }
+        root.addView(matchRow2)
+
+        section("INNINGS SUMMARY")
+        historyText = text("", 14, Color.rgb(220, 230, 240), false)
+        root.addView(historyText)
+
+        val bottom = button("NEW MATCH", Color.rgb(120, 70, 35))
+        bottom.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("Start a new match?")
+                .setMessage("The current match will be cleared from this screen.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("New match") { _, _ ->
+                    startNewMatch()
+                    refresh()
+                    showSetupDialog()
+                }.show()
+        }
+        root.addView(bottom)
+        refresh()
     }
 
-    private fun matchWidth() = LinearLayout.LayoutParams(
-        LinearLayout.LayoutParams.MATCH_PARENT,
-        LinearLayout.LayoutParams.WRAP_CONTENT
-    )
+    private fun addRuns(
+        runs: Int,
+        legal: Boolean,
+        label: String,
+        wide: Int = 0,
+        noBall: Int = 0,
+        bye: Int = 0,
+        legBye: Int = 0
+    ) {
+        if (!canScore()) return
+        saveUndo()
+        current.runs += runs
+        current.wides += wide
+        current.noBalls += noBall
+        current.byes += bye
+        current.legByes += legBye
+        if (legal) current.legalBalls++
+        checkInningsEnd()
+        refresh(label)
+    }
 
-    private fun equalWeight() = LinearLayout.LayoutParams(0, dp(48), 1f).apply {
-        setMargins(dp(3), dp(3), dp(3), dp(3))
+    private fun addWicket() {
+        if (!canScore()) return
+        if (current.wickets >= 10) return
+        saveUndo()
+        current.wickets++
+        current.legalBalls++
+        checkInningsEnd()
+        refresh("Wicket!")
+    }
+
+    private fun canScore(): Boolean {
+        if (current.completed) {
+            toast("This innings is complete. Start the next innings.")
+            return false
+        }
+        return true
+    }
+
+    private fun checkInningsEnd() {
+        val oversFinished = matchType != "Test" && current.legalBalls >= oversLimit * 6
+        if (current.wickets >= 10 || oversFinished) current.completed = true
+        if (inningsList.size >= 2 && currentIndex > 0) {
+            val first = inningsList[0]
+            if (current.runs > first.runs) current.completed = true
+        }
+    }
+
+    private fun nextInnings() {
+        if (!current.completed && current.wickets < 10) {
+            AlertDialog.Builder(this)
+                .setTitle("End this innings?")
+                .setMessage("The current innings is not complete. Continue to the next innings?")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Continue") { _, _ -> createNextInnings() }
+                .show()
+        } else createNextInnings()
+    }
+
+    private fun createNextInnings() {
+        val maxInnings = if (matchType == "Test") 4 else 2
+        if (inningsList.size >= maxInnings) {
+            toast("All innings for this match have been entered.")
+            return
+        }
+        saveUndo()
+        val batting = current.bowling
+        val bowling = current.batting
+        inningsList.add(Innings(batting, bowling))
+        currentIndex = inningsList.lastIndex
+        refresh("Innings ${currentIndex + 1} started")
+    }
+
+    private fun declareInnings() {
+        if (matchType != "Test") {
+            toast("Declaration is available in Test matches.")
+            return
+        }
+        if (!canScore()) return
+        saveUndo()
+        current.declared = true
+        current.completed = true
+        refresh("Innings declared")
+    }
+
+    private fun saveUndo() {
+        val copy = inningsList.map { it.copy() }
+        undoStack.addLast(Snapshot(copy, currentIndex, matchType, oversLimit, teamA, teamB))
+        if (undoStack.size > 100) undoStack.removeFirst()
+    }
+
+    private fun undo() {
+        if (undoStack.isEmpty()) {
+            toast("Nothing to undo")
+            return
+        }
+        val state = undoStack.removeLast()
+        inningsList.clear()
+        inningsList.addAll(state.innings.map { it.copy() })
+        currentIndex = state.currentIndex
+        matchType = state.matchType
+        oversLimit = state.oversLimit
+        teamA = state.teamA
+        teamB = state.teamB
+        refresh("Last action undone")
+    }
+
+    private fun refresh(message: String = "") {
+        if (!::scoreText.isInitialized) return
+        val c = current
+        scoreText.text = "${c.runs}/${c.wickets}"
+        detailsText.text =
+            "Overs ${c.overs}    •    Extras ${c.extras}    •    RR ${String.format(Locale.US, "%.2f", c.runRate)}"
+        inningsText.text = "${matchType.uppercase(Locale.getDefault())}  |  INNINGS ${currentIndex + 1}  |  ${c.batting} batting"
+        statusText.text = when {
+            c.declared -> "DECLARED"
+            c.completed -> "INNINGS COMPLETE"
+            else -> message
+        }
+        val summary = StringBuilder()
+        inningsList.forEachIndexed { index, inn ->
+            summary.append("Innings ${index + 1}: ${inn.batting}  ${inn.runs}/${inn.wickets} (${inn.overs} ov)")
+            if (inn.declared) summary.append("  declared")
+            if (inn.completed) summary.append("  complete")
+            summary.append("\n")
+        }
+        if (inningsList.size >= 2) {
+            val first = inningsList[0]
+            val second = inningsList[1]
+            val target = first.runs + 1
+            if (currentIndex == 1 && !second.completed) {
+                summary.append("\nTarget: $target  •  Need ${maxOf(0, target - second.runs)} runs")
+            }
+            if (currentIndex >= 1 && second.completed) {
+                summary.append("\n${if (second.runs >= target) second.batting + " won" else first.batting + " ahead"}")
+            }
+        }
+        historyText.text = summary.toString()
+    }
+
+    private fun showSetupDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(4))
+        }
+        val a = EditText(this).apply { hint = "Batting team"; setText(teamA) }
+        val b = EditText(this).apply { hint = "Bowling team"; setText(teamB) }
+        layout.addView(a)
+        layout.addView(b)
+        val typeButton = Button(this).apply { text = "Match type: $matchType" }
+        layout.addView(typeButton)
+        typeButton.setOnClickListener {
+            val types = arrayOf("T20", "ODI", "Test", "Custom")
+            AlertDialog.Builder(this)
+                .setTitle("Select match type")
+                .setItems(types) { _, which ->
+                    matchType = types[which]
+                    oversLimit = when (matchType) {
+                        "T20" -> 20
+                        "ODI" -> 50
+                        "Test" -> 0
+                        else -> 20
+                    }
+                    typeButton.text = "Match type: $matchType"
+                }.show()
+        }
+        val overs = EditText(this).apply {
+            hint = "Overs per innings (Custom only)"
+            inputType = 2
+            setText(if (oversLimit > 0) oversLimit.toString() else "")
+        }
+        layout.addView(overs)
+        AlertDialog.Builder(this)
+            .setTitle("Match setup")
+            .setView(layout)
+            .setCancelable(false)
+            .setPositiveButton("Start match") { _, _ ->
+                teamA = a.text.toString().trim().ifEmpty { "TEAM A" }
+                teamB = b.text.toString().trim().ifEmpty { "TEAM B" }
+                if (teamA.equals(teamB, true)) teamB += " B"
+                if (matchType == "Custom") {
+                    oversLimit = overs.text.toString().toIntOrNull()?.coerceIn(1, 200) ?: 20
+                }
+                inningsList[0].batting = teamA
+                inningsList[0].bowling = teamB
+                refresh()
+            }
+            .setNegativeButton("Later", null)
+            .show()
+    }
+
+    private fun section(label: String) {
+        addGap(14)
+        root.addView(text(label, 13, Color.rgb(100, 220, 190), true))
+        addGap(5)
+    }
+
+    private fun addAction(parent: LinearLayout, label: String, color: Int = Color.rgb(35, 75, 110), action: () -> Unit) {
+        val b = button(label, color)
+        b.setOnClickListener { action() }
+        parent.addView(b, weightParams())
     }
 
     private fun row() = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
-        setPadding(0, dp(2), 0, dp(2))
-    }
-
-    private fun statView(value: String) = TextView(this).apply {
-        text = value
-        textSize = 13f
-        setTextColor(Color.WHITE)
         gravity = Gravity.CENTER
-        typeface = Typeface.DEFAULT_BOLD
     }
 
-    private fun sectionTitle(value: String) {
-        val title = TextView(this).apply {
-            text = value
-            textSize = 13f
-            setTextColor(Color.rgb(143, 179, 222))
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(dp(2), dp(18), 0, dp(6))
-        }
-        root.addView(title)
+    private fun weightParams() = LinearLayout.LayoutParams(0, dp(52), 1f).apply {
+        setMargins(dp(3), dp(3), dp(3), dp(3))
     }
 
-    private fun actionButton(label: String, color: Int, action: () -> Unit): Button {
-        return Button(this).apply {
+    private fun button(label: String, color: Int): Button =
+        Button(this).apply {
             text = label
-            textSize = 11f
+            textSize = 13f
             isAllCaps = false
             setTextColor(Color.WHITE)
-            background = panel(color, 12)
-            setPadding(dp(2), 0, dp(2), 0)
-            setOnClickListener { action(); refresh() }
+            setBackgroundColor(color)
+            minHeight = dp(48)
         }
+
+    private fun text(value: String, size: Int, color: Int, bold: Boolean) =
+        TextView(this).apply {
+            text = value
+            textSize = size.toFloat()
+            setTextColor(color)
+            if (bold) typeface = Typeface.DEFAULT_BOLD
+            setPadding(dp(4), dp(5), dp(4), dp(5))
+        }
+
+    private fun addGap(height: Int) {
+        root.addView(View(this), LinearLayout.LayoutParams(1, dp(height)))
     }
 
-    private fun addBall(runs: Int, legal: Boolean, wicket: Boolean, label: String) {
-        history.addLast(BallRecord(runs, legal, wicket, label))
-        totalRuns += runs
-        if (legal) legalBalls++
-        if (wicket && wickets < 10) wickets++
-        refresh()
-    }
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
-    private fun undo() {
-        if (history.isEmpty()) {
-            Toast.makeText(this, "Nothing to undo", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val last = history.removeLast()
-        totalRuns = (totalRuns - last.runs).coerceAtLeast(0)
-        if (last.legalBall) legalBalls = (legalBalls - 1).coerceAtLeast(0)
-        if (last.wicket) wickets = (wickets - 1).coerceAtLeast(0)
-        refresh()
-    }
-
-    private fun endInnings() {
-        if (innings == 1) {
-            target = totalRuns + 1
-            val oldBatting = battingTeam
-            battingTeam = bowlingTeam
-            bowlingTeam = oldBatting
-            innings = 2
-            totalRuns = 0
-            wickets = 0
-            legalBalls = 0
-            history.clear()
-            refresh()
-            Toast.makeText(this, "2nd innings started. Target: $target", Toast.LENGTH_LONG).show()
-        } else {
-            Toast.makeText(this, "Match completed. Use Reset Match for a new match.", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    private fun resetMatch() {
-        totalRuns = 0
-        wickets = 0
-        legalBalls = 0
-        innings = 1
-        target = 0
-        battingTeam = "TEAM A"
-        bowlingTeam = "TEAM B"
-        history.clear()
-        refresh()
-        Toast.makeText(this, "Match reset", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun refresh() {
-        if (!::scoreText.isInitialized) return
-        scoreText.text = "$totalRuns/$wickets"
-        val overs = "${legalBalls / 6}.${legalBalls % 6}"
-        oversText.text = "OVERS  $overs"
-        val rate = if (legalBalls == 0) 0.0 else totalRuns * 6.0 / legalBalls
-        runRateText.text = "RUN RATE  ${"%.2f".format(rate)}"
-
-        val teamLabel = root.getChildAt(2) as? LinearLayout
-        val teamText = teamLabel?.getChildAt(0) as? TextView
-        teamText?.text = battingTeam
-
-        targetText.text = if (innings == 1) {
-            "1ST INNINGS"
-        } else {
-            "2ND INNINGS • TARGET $target • NEED ${(target - totalRuns).coerceAtLeast(0)}"
-        }
-
-        statusText.text = when {
-            wickets >= 10 -> "All out"
-            innings == 2 && totalRuns >= target -> "Target reached — innings complete"
-            else -> "Match in progress"
-        }
-
-        val recent = history.toList().takeLast(12).asReversed()
-        historyText.text = if (recent.isEmpty()) {
-            "No balls recorded yet"
-        } else {
-            recent.joinToString("     ") { it.label }
-        }
+    private fun toast(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 }
