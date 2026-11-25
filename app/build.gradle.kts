@@ -20,3 +20,13 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
+dependencies {
+    // Firebase Bill of Materials
+    implementation(platform("com.google.firebase:firebase-bom:35.2.0"))
+
+    // Firebase Authentication
+    implementation("com.google.firebase:firebase-auth")
+
+    // Cloud Firestore Database
+    implementation("com.google.firebase:firebase-firestore")
+}
