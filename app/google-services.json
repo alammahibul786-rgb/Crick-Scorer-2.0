@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "534630747720",
+    "project_id": "cricket-scorer-pro-ca9b9",
+    "storage_bucket": "cricket-scorer-pro-ca9b9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:534630747720:android:94a43bf9a7cb539aed127d",
+        "android_client_info": {
+          "package_name": "com.crickscorer.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAXDxFn6vjfRzqUHkvCy6L9MAaDQKfxAJU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
