@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
         android:theme="@style/AppTheme"
-        android:label="Crick Scorer 2.0"
+        android:label="CRICKET SCORER PRO"
         android:allowBackup="true"
         android:supportsRtl="true">
         <activity
