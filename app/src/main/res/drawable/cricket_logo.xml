@@ -1,0 +1,49 @@
+
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Dark background -->
+    <path
+        android:fillColor="#071426"
+        android:pathData="M0,0h108v108h-108z"/>
+
+    <!-- Gold shield -->
+    <path
+        android:fillColor="#063D2B"
+        android:strokeColor="#FFD45A"
+        android:strokeWidth="3"
+        android:pathData="M54,8 L91,24 L87,68 Q80,89 54,101 Q28,89 21,68 L17,24 Z"/>
+
+    <!-- Cricket bat -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,25 L42,19 L62,52 L55,59 Z M32,23 L38,17 L43,22 L37,28 Z"/>
+
+    <!-- Cricket ball -->
+    <path
+        android:fillColor="#D92332"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.5"
+        android:pathData="M69,43 A12,12 0,1 0,69 67 A12,12 0,1 0,69 43"/>
+
+    <!-- Ball stitching -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.5"
+        android:pathData="M62,48 Q70,55 76,63"/>
+
+    <!-- Cricket stumps -->
+    <path
+        android:fillColor="#FFD45A"
+        android:pathData="M42,68h3v13h-3z M51,66h3v15h-3z M60,68h3v13h-3z M40,65h25v2h-25z"/>
+
+    <!-- Green base -->
+    <path
+        android:fillColor="#12C878"
+        android:pathData="M27,85h54v5h-54z"/>
+
+</vector>
