@@ -688,7 +688,7 @@ class MainActivity : Activity() {
             lines.append("\n")
         }
         val view = TextView(this).apply {
-            text = lines.toString(); textSize = 13f; setTextColor(Color.WHITE)
+            text = lines.toString(); textSize = 13f; setTextColor(Color.BLACK)
             setPadding(dp(16), dp(12), dp(16), dp(12))
         }
         val scroll = ScrollView(this); scroll.addView(view)
