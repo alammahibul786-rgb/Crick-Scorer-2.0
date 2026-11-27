@@ -29,4 +29,5 @@ dependencies {
 
     // Cloud Firestore Database
     implementation("com.google.firebase:firebase-firestore")
+implementation("androidx.core:core:1.15.0")
 }
