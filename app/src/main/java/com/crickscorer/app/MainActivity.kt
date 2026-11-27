@@ -816,119 +816,364 @@ class MainActivity : Activity() {
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
+
 private fun saveScorecardPdf(scorecardText: String) {
     val pdf = PdfDocument()
 
     try {
         val pageWidth = 595
         val pageHeight = 842
-        val margin = 40
-        val lineHeight = 16
+        val margin = 32f
+        val contentWidth = pageWidth - margin * 2
 
-        val titlePaint = Paint().apply {
-            color = Color.BLACK
-            textSize = 18f
+        val green = Color.rgb(17, 65, 48)
+        val lightGreen = Color.rgb(222, 239, 228)
+        val paleGreen = Color.rgb(241, 248, 243)
+        val darkText = Color.rgb(35, 45, 40)
+        val grey = Color.rgb(110, 120, 115)
+
+        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 22f
+            typeface = Typeface.create(
+                Typeface.DEFAULT, Typeface.BOLD
+            )
+        }
+
+        val subtitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(210, 235, 218)
+            textSize = 10f
+        }
+
+        val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = darkText
+            textSize = 10f
+            typeface = Typeface.DEFAULT
+        }
+
+        val boldPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = green
+            textSize = 10f
             typeface = Typeface.DEFAULT_BOLD
-            isAntiAlias = true
         }
 
-        val textPaint = Paint().apply {
-            color = Color.BLACK
-            textSize = 11f
-            isAntiAlias = true
+        val whitePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 10f
+            typeface = Typeface.DEFAULT_BOLD
         }
 
-        val wrappedLines = mutableListOf<String>()
-        val maxWidth = (pageWidth - margin * 2).toFloat()
+        val backgroundPaint = Paint().apply {
+            color = green
+            style = Paint.Style.FILL
+        }
 
-        scorecardText.split("\n").forEach { originalLine ->
-            if (originalLine.isBlank()) {
-                wrappedLines.add("")
-            } else {
-                var currentLine = ""
+        val sectionPaint = Paint().apply {
+            color = lightGreen
+            style = Paint.Style.FILL
+        }
 
-                originalLine.split(" ").forEach { word ->
-                    val testLine =
-                        if (currentLine.isEmpty()) word
-                        else "$currentLine $word"
+        val detailPaint = Paint().apply {
+            color = paleGreen
+            style = Paint.Style.FILL
+        }
 
-                    if (textPaint.measureText(testLine) > maxWidth &&
-                        currentLine.isNotEmpty()
-                    ) {
-                        wrappedLines.add(currentLine)
-                        currentLine = word
-                    } else {
-                        currentLine = testLine
-                    }
+        val dividerPaint = Paint().apply {
+            color = Color.rgb(210, 220, 213)
+            strokeWidth = 0.7f
+        }
+
+        data class PdfRow(
+            val text: String,
+            val type: Int
+        )
+
+        val rows = mutableListOf<PdfRow>()
+
+        // Identify scorecard sections
+        scorecardText.lines().forEach { original ->
+            val line = original.trim()
+
+            if (line.isBlank()) return@forEach
+
+            val type = when {
+                line.startsWith(
+                    "INNINGS", ignoreCase = true
+                ) -> 1
+
+                line.equals(
+                    "BATTERS", ignoreCase = true
+                ) || line.equals(
+                    "BOWLING", ignoreCase = true
+                ) -> 2
+
+                line.startsWith(
+                    "EXTRAS:", ignoreCase = true
+                ) || line.startsWith(
+                    "FALL OF WICKETS:",
+                    ignoreCase = true
+                ) -> 3
+
+                else -> 0
+            }
+
+            // Wrap long lines
+            var currentLine = ""
+            val maxWidth = contentWidth - 20f
+
+            line.split(" ").forEach { word ->
+                val testLine = if (currentLine.isEmpty()) {
+                    word
+                } else {
+                    "$currentLine $word"
                 }
 
-                if (currentLine.isNotEmpty()) {
-                    wrappedLines.add(currentLine)
+                if (bodyPaint.measureText(testLine) > maxWidth &&
+                    currentLine.isNotEmpty()
+                ) {
+                    rows.add(PdfRow(currentLine, type))
+                    currentLine = word
+                } else {
+                    currentLine = testLine
                 }
+            }
+
+            if (currentLine.isNotEmpty()) {
+                rows.add(PdfRow(currentLine, type))
             }
         }
 
-        val linesPerPage = 42
-        val pageCount =
-            (wrappedLines.size + linesPerPage - 1) / linesPerPage
+        // Prepare multiple PDF pages
+        fun rowHeight(type: Int): Float {
+            return when (type) {
+                1 -> 25f
+                2 -> 23f
+                3 -> 22f
+                else -> 19f
+            }
+        }
 
-        for (pageNumber in 0 until pageCount) {
+        val pages = mutableListOf<MutableList<PdfRow>>()
+        var currentPage = mutableListOf<PdfRow>()
+        var usedHeight = 0f
+        val availableHeight = 665f
+
+        rows.forEach { row ->
+            val height = rowHeight(row.type)
+
+            if (usedHeight + height > availableHeight &&
+                currentPage.isNotEmpty()
+            ) {
+                pages.add(currentPage)
+                currentPage = mutableListOf()
+                usedHeight = 0f
+            }
+
+            currentPage.add(row)
+            usedHeight += height
+        }
+
+        if (currentPage.isNotEmpty()) {
+            pages.add(currentPage)
+        }
+
+        if (pages.isEmpty()) {
+            pages.add(
+                mutableListOf(
+                    PdfRow("No scorecard data available", 0)
+                )
+            )
+        }
+
+        val pageCount = pages.size
+
+        // Draw every page
+        pages.forEachIndexed { pageIndex, pageRows ->
+
             val pageInfo = PdfDocument.PageInfo.Builder(
-                pageWidth, pageHeight, pageNumber + 1
+                pageWidth,
+                pageHeight,
+                pageIndex + 1
             ).create()
 
             val page = pdf.startPage(pageInfo)
             val canvas = page.canvas
 
+            // White page background
+            canvas.drawColor(Color.WHITE)
+
+            // Professional header
+            canvas.drawRect(
+                0f, 0f,
+                pageWidth.toFloat(), 82f,
+                backgroundPaint
+            )
+
             canvas.drawText(
                 "CRICKET SCORER PRO",
-                margin.toFloat(),
-                48f,
+                margin,
+                35f,
                 titlePaint
             )
 
-            canvas.drawLine(
-                margin.toFloat(), 62f,
-                (pageWidth - margin).toFloat(), 62f,
-                textPaint
+            canvas.drawText(
+                "OFFICIAL MATCH SCORECARD",
+                margin,
+                56f,
+                subtitlePaint
             )
 
-            val start = pageNumber * linesPerPage
-            val end = minOf(start + linesPerPage, wrappedLines.size)
-            var y = 88f
+            canvas.drawText(
+                "PRO EDITION",
+                450f,
+                35f,
+                subtitlePaint
+            )
 
-            for (i in start until end) {
-                canvas.drawText(
-                    wrappedLines[i],
-                    margin.toFloat(),
-                    y,
-                    textPaint
+            canvas.drawLine(
+                margin, 95f,
+                pageWidth - margin, 95f,
+                dividerPaint
+            )
+
+            var y = 111f
+
+            // Draw scorecard rows
+            pageRows.forEachIndexed { index, row ->
+
+                val height = rowHeight(row.type)
+                val top = y - 13f
+                val bottom = top + height
+
+                when (row.type) {
+
+                    // Innings heading
+                    1 -> {
+                        canvas.drawRect(
+                            margin, top,
+                            pageWidth - margin, bottom,
+                            backgroundPaint
+                        )
+
+                        canvas.drawText(
+                            row.text,
+                            margin + 10f,
+                            y + 3f,
+                            whitePaint
+                        )
+                    }
+
+                    // Batters and bowling headings
+                    2 -> {
+                        canvas.drawRect(
+                            margin, top,
+                            pageWidth - margin, bottom,
+                            sectionPaint
+                        )
+
+                        canvas.drawText(
+                            row.text,
+                            margin + 10f,
+                            y + 3f,
+                            boldPaint
+                        )
+                    }
+
+                    // Extras and fall of wickets
+                    3 -> {
+                        canvas.drawRect(
+                            margin, top,
+                            pageWidth - margin, bottom,
+                            detailPaint
+                        )
+
+                        canvas.drawText(
+                            row.text,
+                            margin + 10f,
+                            y + 3f,
+                            boldPaint
+                        )
+                    }
+
+                    // Player statistics
+                    else -> {
+                        if (index % 2 == 0) {
+                            canvas.drawRect(
+                                margin, top,
+                                pageWidth - margin, bottom,
+                                detailPaint
+                            )
+                        }
+
+                        canvas.drawText(
+                            row.text,
+                            margin + 10f,
+                            y + 3f,
+                            bodyPaint
+                        )
+                    }
+                }
+
+                canvas.drawLine(
+                    margin, bottom,
+                    pageWidth - margin, bottom,
+                    dividerPaint
                 )
-                y += lineHeight
+
+                y += height
+            }
+
+            // Footer
+            canvas.drawLine(
+                margin, 795f,
+                pageWidth - margin, 795f,
+                dividerPaint
+            )
+
+            val footerPaint = Paint(
+                Paint.ANTI_ALIAS_FLAG
+            ).apply {
+                color = grey
+                textSize = 9f
             }
 
             canvas.drawText(
-                "Page ${pageNumber + 1} of $pageCount",
-                margin.toFloat(),
-                815f,
-                textPaint
+                "CRICKET SCORER PRO",
+                margin,
+                813f,
+                footerPaint
+            )
+
+            val pageText = "Page ${pageIndex + 1} of $pageCount"
+
+            canvas.drawText(
+                pageText,
+                pageWidth - margin -
+                    footerPaint.measureText(pageText),
+                813f,
+                footerPaint
             )
 
             pdf.finishPage(page)
         }
 
+        // Save PDF
         val folder = File(filesDir, "scorecards")
-        if (!folder.exists()) folder.mkdirs()
+
+        if (!folder.exists()) {
+            folder.mkdirs()
+        }
 
         val file = File(
             folder,
-            "Scorecard_${System.currentTimeMillis()}.pdf"
+            "Professional_Scorecard_${System.currentTimeMillis()}.pdf"
         )
 
         FileOutputStream(file).use { output ->
             pdf.writeTo(output)
         }
 
+        // Share PDF
         val uri = FileProvider.getUriForFile(
             this,
             "$packageName.provider",
@@ -938,7 +1183,11 @@ private fun saveScorecardPdf(scorecardText: String) {
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "application/pdf"
             putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+
+            addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+
             clipData = android.content.ClipData.newUri(
                 contentResolver,
                 "Scorecard PDF",
@@ -948,23 +1197,28 @@ private fun saveScorecardPdf(scorecardText: String) {
 
         Toast.makeText(
             this,
-            "PDF saved successfully",
+            "Professional PDF saved successfully",
             Toast.LENGTH_LONG
         ).show()
 
         startActivity(
-            Intent.createChooser(shareIntent, "Share Scorecard PDF")
+            Intent.createChooser(
+                shareIntent,
+                "Share Professional Scorecard"
+            )
         )
 
     } catch (e: Exception) {
+
         Toast.makeText(
             this,
             "PDF Error: ${e.message}",
             Toast.LENGTH_LONG
         ).show()
+
     } finally {
         pdf.close()
     }
 }
 
-}
+
