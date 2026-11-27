@@ -1220,5 +1220,5 @@ private fun saveScorecardPdf(scorecardText: String) {
         pdf.close()
     }
 }
-
+}
 
