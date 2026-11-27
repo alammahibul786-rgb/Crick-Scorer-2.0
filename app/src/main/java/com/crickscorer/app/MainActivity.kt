@@ -13,6 +13,12 @@ import android.widget.*
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
+import android.net.Uri
+import androidx.core.content.FileProvider
+import java.io.File
+import java.io.FileOutputStream
 
 class MainActivity : Activity() {
     private data class Team(val name: String, val players: MutableList<String> = mutableListOf())
