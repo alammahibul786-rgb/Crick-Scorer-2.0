@@ -693,8 +693,13 @@ class MainActivity : Activity() {
         }
         val scroll = ScrollView(this); scroll.addView(view)
         AlertDialog.Builder(this).setTitle("Full scorecard").setView(scroll)
-            .setPositiveButton("Share") { _, _ -> shareText(lines.toString()) }
-            .setNegativeButton("Close", null).show()
+            .setPositiveButton("Share") { _, _ ->
+    shareText(lines.toString())
+}
+.setNeutralButton("Save PDF") { _, _ ->
+    saveScorecardPdf(lines.toString())
+}
+.setNegativeButton("Close", null).show()
     }
 
     private fun showCommentary() {
@@ -810,4 +815,156 @@ class MainActivity : Activity() {
     private fun addGap(height: Int) { root.addView(View(this), LinearLayout.LayoutParams(1, dp(height))) }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+
+private fun saveScorecardPdf(scorecardText: String) {
+    val pdf = PdfDocument()
+
+    try {
+        val pageWidth = 595
+        val pageHeight = 842
+        val margin = 40
+        val lineHeight = 16
+
+        val titlePaint = Paint().apply {
+            color = Color.BLACK
+            textSize = 18f
+            typeface = Typeface.DEFAULT_BOLD
+            isAntiAlias = true
+        }
+
+        val textPaint = Paint().apply {
+            color = Color.BLACK
+            textSize = 11f
+            isAntiAlias = true
+        }
+
+        val wrappedLines = mutableListOf<String>()
+        val maxWidth = (pageWidth - margin * 2).toFloat()
+
+        scorecardText.split("\n").forEach { originalLine ->
+            if (originalLine.isBlank()) {
+                wrappedLines.add("")
+            } else {
+                var currentLine = ""
+
+                originalLine.split(" ").forEach { word ->
+                    val testLine =
+                        if (currentLine.isEmpty()) word
+                        else "$currentLine $word"
+
+                    if (textPaint.measureText(testLine) > maxWidth &&
+                        currentLine.isNotEmpty()
+                    ) {
+                        wrappedLines.add(currentLine)
+                        currentLine = word
+                    } else {
+                        currentLine = testLine
+                    }
+                }
+
+                if (currentLine.isNotEmpty()) {
+                    wrappedLines.add(currentLine)
+                }
+            }
+        }
+
+        val linesPerPage = 42
+        val pageCount =
+            (wrappedLines.size + linesPerPage - 1) / linesPerPage
+
+        for (pageNumber in 0 until pageCount) {
+            val pageInfo = PdfDocument.PageInfo.Builder(
+                pageWidth, pageHeight, pageNumber + 1
+            ).create()
+
+            val page = pdf.startPage(pageInfo)
+            val canvas = page.canvas
+
+            canvas.drawText(
+                "CRICKET SCORER PRO",
+                margin.toFloat(),
+                48f,
+                titlePaint
+            )
+
+            canvas.drawLine(
+                margin.toFloat(), 62f,
+                (pageWidth - margin).toFloat(), 62f,
+                textPaint
+            )
+
+            val start = pageNumber * linesPerPage
+            val end = minOf(start + linesPerPage, wrappedLines.size)
+            var y = 88f
+
+            for (i in start until end) {
+                canvas.drawText(
+                    wrappedLines[i],
+                    margin.toFloat(),
+                    y,
+                    textPaint
+                )
+                y += lineHeight
+            }
+
+            canvas.drawText(
+                "Page ${pageNumber + 1} of $pageCount",
+                margin.toFloat(),
+                815f,
+                textPaint
+            )
+
+            pdf.finishPage(page)
+        }
+
+        val folder = File(filesDir, "scorecards")
+        if (!folder.exists()) folder.mkdirs()
+
+        val file = File(
+            folder,
+            "Scorecard_${System.currentTimeMillis()}.pdf"
+        )
+
+        FileOutputStream(file).use { output ->
+            pdf.writeTo(output)
+        }
+
+        val uri = FileProvider.getUriForFile(
+            this,
+            "$packageName.provider",
+            file
+        )
+
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            clipData = android.content.ClipData.newUri(
+                contentResolver,
+                "Scorecard PDF",
+                uri
+            )
+        }
+
+        Toast.makeText(
+            this,
+            "PDF saved successfully",
+            Toast.LENGTH_LONG
+        ).show()
+
+        startActivity(
+            Intent.createChooser(shareIntent, "Share Scorecard PDF")
+        )
+
+    } catch (e: Exception) {
+        Toast.makeText(
+            this,
+            "PDF Error: ${e.message}",
+            Toast.LENGTH_LONG
+        ).show()
+    } finally {
+        pdf.close()
+    }
+}
+
 }
